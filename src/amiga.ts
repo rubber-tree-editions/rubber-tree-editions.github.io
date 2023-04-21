@@ -208,3 +208,100 @@ export function readLZHEntry(bytes: Uint8Array, offset: number) {
     endOffset: ptr,
   };
 }
+
+export class DMSTrack {
+  constructor (readonly header: Uint8Array, readonly payload: Uint8Array) {
+  }
+  readonly headerDV = new DataView(this.header.buffer, this.header.byteOffset, this.header.byteLength);
+  get trackNumber() {
+    return this.headerDV.getInt16(2, false);
+  }
+  get packedLength() {
+    return this.headerDV.getUint16(6, false);
+  }
+  get partiallyUnpackedLength() {
+    return this.headerDV.getUint16(8, false);
+  }
+  get fullyUnpackedLength() {
+    return this.headerDV.getUint16(10, false);
+  }
+  get flags() {
+    return this.header[12];
+  }
+  get mode() {
+    return this.header[13];
+  }
+  get unpackedCrc16() {
+    return this.headerDV.getUint16(14, false);
+  }
+  get packedCrc16() {
+    return this.headerDV.getUint16(16, false);
+  }
+  get headerCrc16() {
+    return this.headerDV.getUint16(18, false);
+  }
+  unpack() {
+    switch (this.mode) {
+      case 0: return this.payload;
+      case 1: {
+        const unpacked = new Uint8Array(this.fullyUnpackedLength);
+        unrle(this.payload, unpacked);
+        return unpacked;
+      }
+      default: {
+        throw new Error('NYI');
+      }
+    }
+  }
+}
+
+export class DMSFile {
+  constructor(readonly header: Uint8Array, readonly tracks: DMSTrack[]) {
+  }
+}
+
+function unrle(inBytes: Uint8Array, outBytes: Uint8Array) {
+  let inPos = 0, outPos = 0;
+  for (let escape_i = inBytes.indexOf(0x90, inPos); escape_i !== -1; escape_i = inBytes.indexOf(0x90, inPos)) {
+    if (escape_i !== inPos) {
+      outBytes.set(inBytes.subarray(inPos, escape_i), outPos);
+      outPos += (escape_i - inPos);
+    }
+    inPos = escape_i + 1;
+    let repeatCount = inBytes[inPos++];
+    if (repeatCount === 0x00) {
+      outBytes[outPos++] = 0x90;
+    }
+    else {
+      const repeatByte = inBytes[inPos++];
+      if (repeatCount === 0xFF) {
+        repeatCount = (inBytes[inPos] << 8) | inBytes[inPos + 1];
+        inPos += 2;
+      }
+      outBytes.fill(repeatByte, outPos, outPos + repeatCount);
+      outPos += repeatCount;
+    }
+  }
+  if (inPos < inBytes.length) {
+    outBytes.set(inBytes.subarray(inPos), outPos);
+  }
+}
+
+export function readDMS(bytes: Uint8Array) {
+  if (bytes.length < 52 || String.fromCharCode(...bytes.subarray(0, 4)) !== 'DMS!') {
+    return null;
+  }
+  const header = bytes.subarray(0, 56);
+  const tracks: DMSTrack[] = [];
+  let pos = header.byteLength;
+  while (pos < bytes.length) {
+    if (String.fromCharCode(...bytes.subarray(pos, pos + 2)) !== 'TR') {
+      break;
+    }
+    const packedLength = (bytes[pos+6] << 8) | bytes[pos+7];
+    const track = new DMSTrack(bytes.subarray(pos, pos + 20), bytes.subarray(pos + 20, pos + 20 + packedLength));
+    tracks.push(track);
+    pos += 20 + packedLength;
+  }
+  return new DMSFile(header, tracks);
+}
