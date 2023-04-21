@@ -71,41 +71,96 @@ export function getADFStructure(data: Uint8Array) {
   if (rootBlock == null) return null;
 }
 
-abstract class LZHEntry {
-  constructor(readonly header: Uint8Array, readonly payload: Uint8Array) {
+function crc16_ansi(bytes: Uint8Array) {
+  let crc = 0;
+  for (let byte_i = 0; byte_i < bytes.length; byte_i++) {
+    crc ^= bytes[byte_i];
+    for (let bit_i = 0; bit_i < 8; bit_i++) {
+      const carry = crc & 1;
+      crc >>>= 1;
+      if (carry) {
+        crc ^= 0xA001;
+      }
+    }
   }
-  readonly headerDV = new DataView(this.header);
-  get level() { return this.header[5]; }
+  return crc;
+}
+
+abstract class LZHEntry {
+  constructor(readonly header: Uint8Array, readonly extendedHeaders: Uint8Array[], readonly payload: Uint8Array) {
+  }
+  readonly headerDV = new DataView(this.header.buffer, this.header.byteOffset, this.header.byteLength);
+  get level() { return this.header[20]; }
   get packedSize() { return this.headerDV.getUint32(7, true); }
-  get originalSize() { return this.headerDV.getUint32(11, true); }
+  get unpackedSize() { return this.headerDV.getUint32(11, true); }
   get method() {
     const nameBytes = this.header.subarray(2, 7);
     return String.fromCharCode.apply(String, [...nameBytes].map(v => (v < 0x80) ? v : v | 0xf700));
   }
-  static LEVELS: Array<{new(header: Uint8Array, payload: Uint8Array): LZHEntry}> = [
+  getExtendedHeader(id: number): Uint8Array | undefined {
+    return this.extendedHeaders.filter(v => v[0] === id)[0];
+  }
+  get name() {
+    const dirNameBytes = this.getExtendedHeader(2);
+    const fileNameBytes = this.getExtendedHeader(1);
+    const pathParts: string[] = [];
+    if (dirNameBytes) {
+      const parentPath = String.fromCharCode.apply(String, [...dirNameBytes.subarray(1)].map(v => v < 0x80 ? v : 0xf700 | v));
+      if (parentPath.length > 0) {
+        pathParts.push(...parentPath.split(/\uF7FF/g));
+      }
+    }
+    if (fileNameBytes) {
+      const filename = String.fromCharCode.apply(String, [...fileNameBytes.subarray(1)].map(v => v < 0x80 ? v : 0xf700 | v));
+      if (filename.length > 0) {
+        pathParts.push(filename);
+      }
+    }
+    return pathParts.join('/');
+  }
+  get headerCrc16() {
+    const bytes = this.getExtendedHeader(0);
+    return bytes && bytes.length > 3 ? bytes[1] | (bytes[2] << 16) : undefined;
+  }
+  readonly abstract unpackedCrc16: number;
+  calcPayloadCrc16() {
+    return crc16_ansi(this.payload);
+  }
+  static LEVELS: Array<{new(header: Uint8Array, extendedHeaders: Uint8Array[], payload: Uint8Array): LZHEntry}> = [
     class LZHEntryL0 extends LZHEntry {
       get name() {
         const nameBytes = this.header.subarray(22, 22 + this.header[21]);
         return String.fromCharCode.apply(String, [...nameBytes].map(v => (v < 0x80) ? v : v | 0xf700));
       }
-      get crc16() {
+      get unpackedCrc16() {
         return this.headerDV.getUint16(22 + this.header[21], true);
       }
     },
     class LZHEntryL1 extends LZHEntry {
-      
+      get packedSize() { return this.headerDV.getUint32(7, true) - this.extendedHeaders.reduce((len, h) => len + h.byteLength, 0); }
+      get name() {
+        const nameBytes = this.header.subarray(22, 22 + this.header[21]);
+        return String.fromCharCode.apply(String, [...nameBytes].map(v => (v < 0x80) ? v : v | 0xf700));
+      }
+      get unpackedCrc16() {
+        return this.headerDV.getUint16(22 + this.header[21], true);
+      }
     },
     class LZHEntryL2 extends LZHEntry {
-
+      get unpackedCrc16() {
+        return this.headerDV.getUint16(21, true);
+      }
     },
     class LZHEntryL3 extends LZHEntry {
-
+      get unpackedCrc16() {
+        return this.headerDV.getUint16(21, true);
+      }
     },
   ];
 }
 
-function readLZHEntry(bytes: Uint8Array, offset: number) {
-  const level = bytes[offset + 5];
+export function readLZHEntry(bytes: Uint8Array, offset: number) {
+  const level = bytes[offset + 20];
   let headerLength: number;
   if (level < 2) {
     headerLength = 2 + bytes[offset];
@@ -114,17 +169,42 @@ function readLZHEntry(bytes: Uint8Array, offset: number) {
     headerLength = bytes[offset] | (bytes[offset + 1] << 8);
   }
   else if (level === 3) {
-    headerLength = bytes[24] | (bytes[25] << 8) | (bytes[26] << 16) | (bytes[27] << 24);
+    headerLength = 31;
   }
   else {
     return null;
   }
-  const packedSize = bytes[7] | (bytes[8] << 8) | (bytes[9] << 16) | (bytes[10] << 24);
+  const baseHeader = bytes.subarray(offset, offset + headerLength);
+  let packedSize = (bytes[offset + 7] | (bytes[offset + 8] << 8) | (bytes[offset + 9] << 16) | (bytes[offset + 10] << 24)) >>> 0;
+  const extendedHeaders: Uint8Array[] = [];
+  let ptr = offset + headerLength;
+  if (level === 3) {
+    let extendedHeaderLength = (baseHeader[baseHeader.length - 4] | (baseHeader[baseHeader.length - 3] << 8) | (baseHeader[baseHeader.length - 2] << 16) | (baseHeader[baseHeader.length - 1] << 24)) >>> 0;
+    while (extendedHeaderLength > 0) {
+      const extHeader = bytes.subarray(ptr, ptr + extendedHeaderLength);
+      extendedHeaders.push(extHeader);
+      ptr += extendedHeaderLength;
+      extendedHeaderLength = (extHeader[extHeader.length - 4] | (extHeader[extHeader.length - 3] << 8) | (extHeader[extHeader.length - 2] << 16) | (extHeader[extHeader.length - 1] << 24)) >>> 0;
+    }
+  }
+  else if (level > 0) {
+    let extendedHeaderLength = baseHeader[baseHeader.length - 2] | (baseHeader[baseHeader.length - 1] << 8);
+    while (extendedHeaderLength > 0) {
+      const extHeader = bytes.subarray(ptr, ptr + extendedHeaderLength);
+      extendedHeaders.push(extHeader);
+      ptr += extendedHeaderLength;
+      if (level === 1) packedSize -= extendedHeaderLength;
+      extendedHeaderLength = extHeader[extHeader.length - 2] | (extHeader[extHeader.length - 1] << 8);
+    }
+  }
+  const payload = new Uint8Array(bytes.buffer, bytes.byteOffset + ptr, packedSize);
+  ptr += packedSize;
   return {
     entry: new LZHEntry.LEVELS[level](
-      bytes.subarray(offset, offset + headerLength),
-      bytes.subarray(offset + headerLength, offset + headerLength + packedSize),
+      baseHeader,
+      extendedHeaders,
+      payload,
     ),
-    endOffset: offset + headerLength + packedSize,
+    endOffset: ptr,
   };
 }
