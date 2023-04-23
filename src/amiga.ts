@@ -302,6 +302,11 @@ function unrle(inBytes: Uint8Array, outBytes: Uint8Array) {
   }
   if (inPos < inBytes.length) {
     outBytes.set(inBytes.subarray(inPos), outPos);
+    outPos += (inBytes.length - inPos);
+    inPos = inBytes.length;
+  }
+  if (outPos !== outBytes.length) {
+    throw new Error('expected to unpack ' + outBytes.length + ' bytes, got ' + outPos);
   }
 }
 
