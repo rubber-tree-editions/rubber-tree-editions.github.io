@@ -209,6 +209,14 @@ export function readLZHEntry(bytes: Uint8Array, offset: number) {
   };
 }
 
+function calcChecksum16(bytes: Uint8Array) {
+  let sum = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    sum = (sum + bytes[i]) & 0xffff;
+  }
+  return sum;
+}
+
 export class DMSTrack {
   constructor (readonly header: Uint8Array, readonly payload: Uint8Array) {
   }
@@ -231,7 +239,7 @@ export class DMSTrack {
   get mode() {
     return this.header[13];
   }
-  get unpackedCrc16() {
+  get unpackedChecksum() {
     return this.headerDV.getUint16(14, false);
   }
   get packedCrc16() {
@@ -240,7 +248,17 @@ export class DMSTrack {
   get headerCrc16() {
     return this.headerDV.getUint16(18, false);
   }
-  unpack() {
+  unpack(verify = true): Uint8Array {
+    if (verify) {
+      if (this.packedCrc16 !== crc16_ansi(this.payload)) {
+        throw new Error('packed crc error');
+      }
+      const unpacked = this.unpack(false);
+      if (this.unpackedChecksum !== calcChecksum16(unpacked)) {
+        throw new Error('unpacked checksum error');
+      }
+      return unpacked;
+    }
     switch (this.mode) {
       case 0: return this.payload;
       case 1: {
