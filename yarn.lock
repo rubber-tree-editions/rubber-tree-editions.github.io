@@ -111,6 +111,14 @@ ansi-styles@^3.2.1:
   dependencies:
     color-convert "^1.9.0"
 
+assemblyscript@^0.27.3:
+  version "0.27.3"
+  resolved "https://registry.yarnpkg.com/assemblyscript/-/assemblyscript-0.27.3.tgz#9015284d77308367b705ffa7464d43b94baec9e5"
+  integrity sha512-l0ZXXFa2gql1SnIYsNQJ5vrHpMksALCLQNBOA6VUssCRugYzz7M0dVCXcsWsukVty/Uc24i0//32jJ+S24q3rw==
+  dependencies:
+    binaryen "112.0.0-nightly.20230411"
+    long "^5.2.1"
+
 balanced-match@^1.0.0:
   version "1.0.2"
   resolved "https://registry.yarnpkg.com/balanced-match/-/balanced-match-1.0.2.tgz#e83e3a7e3f300b34cb9d87f615fa0cbf357690ee"
@@ -120,6 +128,11 @@ binary-search@^1.3.6:
   version "1.3.6"
   resolved "https://registry.yarnpkg.com/binary-search/-/binary-search-1.3.6.tgz#e32426016a0c5092f0f3598836a1c7da3560565c"
   integrity sha512-nbE1WxOTTrUWIfsfZ4aHGYu5DOuNkbxGokjV6Z2kxfJK3uaAb8zNK1muzOeipoLHZjInT4Br88BHpzevc681xA==
+
+binaryen@112.0.0-nightly.20230411:
+  version "112.0.0-nightly.20230411"
+  resolved "https://registry.yarnpkg.com/binaryen/-/binaryen-112.0.0-nightly.20230411.tgz#2f85cff68c0fe3e89014d2dd4e933c4e7e313ef1"
+  integrity sha512-4V9r9x9fjAVFZdR2yvBFc3BEJJIBYvd2X8X8k0zAuJsao2gl9wNHDmpQ30QsLo6hgkRfRImkCbCjhXW3RDOYXQ==
 
 brace-expansion@^2.0.1:
   version "2.0.1"
@@ -334,6 +347,11 @@ js-xxhash@^2.0.0:
   version "2.0.0"
   resolved "https://registry.yarnpkg.com/js-xxhash/-/js-xxhash-2.0.0.tgz#c815de02fd07bc780363a3929cf67280da33a313"
   integrity sha512-R7Gad0Y0grmuF/WRBUmxgQA1bGpbmRWM/OwNJZQPVdJBAteJIdBYOBYcHbuJeJwxdddqBVIdP3EfrDNFqahJ2A==
+
+long@^5.2.1:
+  version "5.2.3"
+  resolved "https://registry.yarnpkg.com/long/-/long-5.2.3.tgz#a3ba97f3877cf1d778eccbcb048525ebb77499e1"
+  integrity sha512-lcHwpNoggQTObv5apGNCTdJrO69eHOZMi4BNC+rTLER8iHAqGrUVeLh/irVIM7zTw2bOXA8T6uNPeujwOLg/2Q==
 
 magic-string@0.25.7:
   version "0.25.7"
